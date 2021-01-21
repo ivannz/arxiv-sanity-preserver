@@ -179,7 +179,7 @@ function addPapers(num, dynamic) {
     if(typeof p.abstract !== 'undefined') {
       var abdiv = div.append('span').classed('tt', true).html(p.abstract);
       if(dynamic) {
-        MathJax.Hub.Queue(["Typeset",MathJax.Hub,abdiv[0]]); //typeset the added paper
+        MathJax.typeset(abdiv); //typeset the added paper
       }
     }
 
