@@ -178,9 +178,7 @@ function addPapers(num, dynamic) {
 
     if(typeof p.abstract !== 'undefined') {
       var abdiv = div.append('span').classed('tt', true).html(p.abstract);
-      if(dynamic) {
-        MathJax.typeset(abdiv); //typeset the added paper
-      }
+      MathJax.typeset(abdiv); //typeset the added paper
     }
 
     // in friends tab, list users who the user follows who had these papers in libary
