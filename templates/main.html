@@ -6,9 +6,6 @@
 <title>Arxiv Sanity Preserver</title>
 
 <!-- MathJax -->
-<!-- <script type="text/javascript" async
-  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS_CHTML">
-</script> -->
 <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
 <script>
 MathJax = {
@@ -17,10 +14,13 @@ MathJax = {
   },
   svg: {
     fontCache: 'global'
+  },
+  options: {
+    ignoreHtmlClass: 'tex2jax_ignore'
   }
 };
 </script>
-<script type="text/javascript" id="MathJax-script" async
+<script type="text/javascript" id="MathJax-script"
   src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
 </script>
 
@@ -31,7 +31,8 @@ MathJax = {
 <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}" />
 
 <!-- JS -->
-<script src="{{ url_for('static', filename='jquery-1.8.3.min.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+
 <script src="{{ url_for('static', filename='d3.min.js') }}"></script>
 <script src="{{ url_for('static', filename='as-common.js') }}"></script>
 
