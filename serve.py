@@ -194,7 +194,7 @@ def encode_json(ps, n=10, send_images=True, send_abstracts=True):
     struct['originally_published_time'] = '%s/%s/%s' % (timestruct.month, timestruct.day, timestruct.year)
 
     # fetch amount of discussion on this paper
-    struct['num_discussion'] = comments.count({ 'pid': p['_rawid'] })
+    struct['num_discussion'] = comments.count_documents({'pid': p['_rawid']})
 
     # arxiv comments from the authors (when they submit the paper)
     cc = p.get('arxiv_comment', '')
@@ -273,7 +273,7 @@ def discuss():
   # fetch the counts for all tags
   tag_counts = []
   for c in comms:
-    cc = [tags_collection.count({ 'comment_id':c['_id'], 'tag_name':t }) for t in TAGS]
+    cc = [tags_collection.count_documents({ 'comment_id': c['_id'], 'tag_name': t}) for t in TAGS]
     tag_counts.append(cc);
 
   # and render
