@@ -136,12 +136,10 @@ function renderPost() {
   console.log('rendering preview...');
   $("#preview-wrap").slideDown("fast");
 
-  // render to html with marked
-  var html = marked(txt);
-  // insert into preview div
-  $("#preview").html(html);
+  // render to html with marked and insert into preview div
+  var preview = $("#preview").html(marked(txt));
   // fire off a request to process any latex
-  if (typeof MathJax !== 'undefined') { MathJax.Hub.Queue(["Typeset",MathJax.Hub]); }
+  if (typeof MathJax !== 'undefined') { MathJax.typeset(preview) }
 }
 
 function doPost() {
