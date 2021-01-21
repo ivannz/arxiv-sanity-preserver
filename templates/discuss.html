@@ -66,6 +66,7 @@ var tags = {{ tags | tojson }};
 var tag_counts = {{ tag_counts | tojson }};
 
 function renderComments() {
+  // https://icons.getbootstrap.com/
   var root = d3.select("#discussion");
   var n = comments.length;
   if(n === 0) { root.append('div').html('none, so far.'); }
@@ -78,10 +79,22 @@ function renderComments() {
 
     // add action items
     var cdiv_actions = cdiv.append('div')
-      .classed('caction', true).append('a')
+      .classed('caction', true);
+
+    var pin = cdiv_actions.append('img')
+        .attr('src', 'static/pin.svg')
+        .attr('alt', 'Pin/Unpin this comment');
+
+    // source / render toggle
+    var render = cdiv_actions.append('img')
+      .attr('src', 'static/code-slash.svg')
+      .attr('alt', 'Toggle render / source');
+
+    cdiv_actions.append('a')
       .attr('href', 'discuss?id='+gpid+'&cid='+comment._id)
       .append('img')
-        .attr('src', 'static/linkto.png').attr('alt', 'link to this comment');
+        .attr('src', 'static/link-45deg.svg')
+        .attr('alt', 'Link to this comment');
 
     // header information: user/time/version
     var cdiv_header = cdiv.append('div')
@@ -112,11 +125,19 @@ function renderComments() {
 
     var body = cdiv.append('div')
       .attr('class', 'ctext')
+      .attr('id', '#com' + comment._id + 'body')
       .html(marked(text));
 
-    if (typeof MathJax !== 'undefined') {
-      MathJax.typeset(body);
-    }
+    var source = cdiv.append('textarea')
+      .classed('source', true)
+      .classed('tex2jax_ignore', true)
+      .attr('rows', 15)
+      .attr('cols', 80)
+      .attr('readonly', true)
+      .attr('id', '#com' + comment._id + 'source')
+      .style('display', 'none')
+      .style('resize', 'none')
+      .html(text);
 
     // tags
     var cdiv_tags = cdiv.append('div')
@@ -161,6 +182,36 @@ function renderComments() {
         });
       }}(cdiv_tag, cdiv_tag_count, comment._id, cerr));
     }
+
+    pin.on('click', function(pin, cid, err){return function(){
+      $.post("/pinmessage", {
+        'comment_id': cid
+      }).done(function(){
+        if(pin.attr('src') == 'static/pin-fill.svg') {
+          pin.attr('src', 'static/pin.svg');
+        } else {
+          pin.attr('src', 'static/pin-fill.svg');
+        }
+      }).fail(function(jqXHR){
+        err.html(jqXHR.responseText);
+      });
+    }}(pin, comment._id, cerr));
+
+    render.on('click', function(render, body, source){return function(){
+      var display = body.style('display');
+      body.style('display', source.style('display'));
+      source.style('display', display);
+      if(render.attr('src') == 'static/journal-text.svg') {
+        render.attr('src', 'static/code-slash.svg')
+      } else {
+        render.attr('src', 'static/journal-text.svg')
+      }
+    }}(render, body, source));
+
+    if (typeof MathJax !== 'undefined') {
+      MathJax.typeset(body);
+    }
+
   }
 }
 
@@ -175,8 +226,11 @@ function renderPost() {
 
   // render to html with marked and insert into preview div
   var preview = $("#preview").html(marked(txt));
+
   // fire off a request to process any latex
-  if (typeof MathJax !== 'undefined') { MathJax.typeset(preview) }
+  if (typeof MathJax !== 'undefined') {
+    MathJax.typeset(preview);
+  }
 }
 
 function doPost() {
@@ -218,7 +272,7 @@ $(document).ready(function(){
   }
 
   // display the subject-of-disussion paper on top
-	addPapers(1, false);
+	addPapers(1, true);
 
   // display the comments
   renderComments();
