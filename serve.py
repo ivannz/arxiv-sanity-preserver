@@ -9,6 +9,8 @@ from random import shuffle, randrange, uniform
 import numpy as np
 from sqlite3 import dbapi2 as sqlite3
 from hashlib import md5
+
+import flask
 from flask import Flask, request, session, url_for, redirect, \
      render_template, abort, g, flash, _app_ctx_stack
 from flask_limiter import Limiter
@@ -298,7 +300,7 @@ def comment():
     version = db[pid]['_version'] # most recent version of this paper
   except Exception as e:
     print(e)
-    return 'bad pid. This is most likely Andrej\'s fault.'
+    return 'bad pid. This is most likely Andrej\'s fault.', 500
 
   # create the entry
   entry = {
@@ -314,7 +316,7 @@ def comment():
   # enter into database
   print(entry)
   comments.insert_one(entry)
-  return 'OK'
+  return 'OK', 201
 
 @app.route("/discussions", methods=['GET'])
 def discussions():
@@ -333,17 +335,34 @@ def discussions():
   ctx = default_context(papers, render_format="discussions")
   return render_template('main.html', **ctx)
 
+
+@app.route('/pinmessage', methods=['POST'])
+def pinmessage():
+  return 'OK', 200
+
+
+@app.route('/test', methods=['POST'])
+def test():
+  comment_id = request.form['comment_id']
+  if request.form['flag'] == 'true':
+    return f'{comment_id} succeeded! {request.form["flag"]}'
+
+  return json.dumps({
+    'message': f'An error occurred with {comment_id}! {request.form["flag"]}'
+  }), 500
+
+
 @app.route('/toggletag', methods=['POST'])
 def toggletag():
 
   if not g.user: 
-    return 'You have to be logged in to tag. Sorry - otherwise things could get out of hand FAST.'
+    return 'You have to be logged in to tag. Sorry - otherwise things could get out of hand FAST.', 500
 
   # get the tag and validate it as an allowed tag
   tag_name = request.form['tag_name']
   if not tag_name in TAGS:
     print('tag name %s is not in allowed tags.' % (tag_name, ))
-    return "Bad tag name. This is most likely Andrej's fault."
+    return "Bad tag name. This is most likely Andrej's fault.", 500
 
   pid = request.form['pid']
   comment_id = request.form['comment_id']
@@ -366,7 +385,7 @@ def toggletag():
     print(entry)
     tags_collection.insert_one(entry)
 
-  return 'OK'
+  return 'OK', 200
 
 @app.route("/search", methods=['GET'])
 def search():
