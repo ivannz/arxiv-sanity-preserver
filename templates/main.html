@@ -62,6 +62,65 @@ var show_prompt = "{{ show_prompt }}";
 
 var urlq = ''; // global will be read in to QueryString when load is done
 
+
+// populate papers into #rtable
+// we have some global state here, which is gross and we should get rid of later.
+var pointer_ix = 0; // points to next paper in line to be added to #rtable
+var showed_end_msg = false;
+
+function addPapers(papers, num) {
+  if(papers.length === 0) { return true; } // nothing to display, and we're done
+
+  var root = d3.select("#rtable");
+
+  var base_ix = pointer_ix;
+  for(var i = 0; i < num; i++) {
+    var ix = base_ix + i;
+    if(ix >= papers.length) {
+      if(!showed_end_msg) {
+        if (ix >= numresults){
+          var msg = 'Results complete.';
+        } else {
+          var msg = 'You hit the limit of number of papers to show in one result.';
+        }
+        root.append('div').classed('msg', true).html(msg);
+        showed_end_msg = true;
+      }
+      break;
+    }
+    pointer_ix++;
+
+    var paper = papers[ix];
+    var div = root.append(() => one_paper(paper).node());
+
+    // in friends tab, list users who the user follows who had these papers in libary
+    if(render_format === 'friends') {
+      if(pid_to_users.hasOwnProperty(paper.rawpid)) {
+        var usrtxt = pid_to_users[paper.rawpid].join(', ');
+        div.append('div')
+          .classed('inlibsof', true)
+          .html('In libraries of: ' + usrtxt);
+      }
+    }
+
+    // create the tweets
+    if(ix < tweets.length) {
+      // looks a little weird, i know
+      div.append(() => one_paper_show_tweets(tweets[ix]).node());
+
+    }
+
+    if(render_format == 'paper' && ix === 0) {
+      // lets insert a divider/message
+      div.append('div')
+        .classed('paperdivider', true)
+        .html('Most similar papers:');
+    }
+  }
+
+  return pointer_ix >= papers.length; // are we done?
+}
+
 // when page loads...
 $(document).ready(function(){
 
@@ -71,7 +130,7 @@ $(document).ready(function(){
   if(msg !== '') { d3.select("#rtable").append('div').classed('msg', true).html(msg); }
 
   // add papers to #rtable
-	var done = addPapers(10, false);
+	var done = addPapers(papers, 10);
   if(done) { $("#loadmorebtn").hide(); }
 
   // set up inifinite scrolling for adding more papers
@@ -81,14 +140,14 @@ $(document).ready(function(){
     var bodyHeight = $(document).height() - windowHeight;
     var scrollPercentage = (scrollTop / bodyHeight);
     if(scrollPercentage > 0.9) {
-      var done = addPapers(5, true);
+      var done = addPapers(papers, 5);
       if(done) { $("#loadmorebtn").hide(); }
     }
   });
 
   // just in case scrolling is broken somehow, provide a button handler explicit
   $("#loadmorebtn").on('click', function(){
-    var done = addPapers(5, true);
+    var done = addPapers(papers, 5);
     if(done) { $("#loadmorebtn").hide(); }
   });
 

@@ -25,6 +25,7 @@ var QueryString = function () {
   return query;
 }();
 
+
 function jq( myid ) {
   // for dealing with ids that have . in them
   return myid.replace( /(:|\.|\[|\]|,)/g, "\\$1" );
@@ -302,74 +303,16 @@ function one_paper_show_tweets(collection) {
       .attr('style', 'border: 2px solid ' + border_col + ';');
 
     var highight = one_tweet_highlight(tcontentdiv, tweet, timgdiv);
-    timgdiv.on('mouseover', highight);
-    timgdiv.on('click', highight);
-
-    timgdiv.on('mouseout', function(elt, col) {
-      return function() {
-        elt.attr('style', 'border: 2px solid ' + col + ';');
-      }}(timgdiv, border_col)
-    );
+    timgdiv.on('mouseover', highight)
+      .on('click', highight)
+      .on('mouseout', function(elt, col) {
+        return function() {
+          elt.attr('style', 'border: 2px solid ' + col + ';');
+        }}(timgdiv, border_col)
+      );
   });
 
   return node;
-}
-
-// populate papers into #rtable
-// we have some global state here, which is gross and we should get rid of later.
-var pointer_ix = 0; // points to next paper in line to be added to #rtable
-var showed_end_msg = false;
-function addPapers(papers, num, dynamic) {
-  if(papers.length === 0) { return true; } // nothing to display, and we're done
-
-  var root = d3.select("#rtable");
-
-  var base_ix = pointer_ix;
-  for(var i = 0; i < num; i++) {
-    var ix = base_ix + i;
-    if(ix >= papers.length) {
-      if(!showed_end_msg) {
-        if (ix >= numresults){
-          var msg = 'Results complete.';
-        } else {
-          var msg = 'You hit the limit of number of papers to show in one result.';
-        }
-        root.append('div').classed('msg', true).html(msg);
-        showed_end_msg = true;
-      }
-      break;
-    }
-    pointer_ix++;
-
-    var paper = papers[ix];
-    var div = root.append(() => one_paper(paper).node());
-
-    // in friends tab, list users who the user follows who had these papers in libary
-    if(render_format === 'friends') {
-      if(pid_to_users.hasOwnProperty(paper.rawpid)) {
-        var usrtxt = pid_to_users[paper.rawpid].join(', ');
-        div.append('div')
-          .classed('inlibsof', true)
-          .html('In libraries of: ' + usrtxt);
-      }
-    }
-
-    // create the tweets
-    if(ix < tweets.length) {
-      // looks a little weird, i know
-      div.append(() => one_paper_show_tweets(tweets[ix]).node());
-
-    }
-
-    if(render_format == 'paper' && ix === 0) {
-      // lets insert a divider/message
-      div.append('div')
-        .classed('paperdivider', true)
-        .html('Most similar papers:');
-    }
-  }
-
-  return pointer_ix >= papers.length; // are we done?
 }
 
 function timeConverter(UNIX_timestamp){
