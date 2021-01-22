@@ -353,21 +353,16 @@ def discuss():
     )
     comments_list = list(comments_cursor)
     for comment in comments_list:
+        # have to convert these to strs from ObjectId, and backwards
+        #  later http://api.mongodb.com/python/current/tutorial.html
         comment["_id"] = str(comment["_id"])
-    # have to convert these to strs from ObjectId, and backwards
-    #  later http://api.mongodb.com/python/current/tutorial.html
 
-    # fetch the counts for all tags
-    tag_counts = []
-    for comment in comments_list:
-        tag_counts.append(
-            [
-                tags_collection.count_documents(
-                    {"comment_id": comment["_id"], "tag_name": t}
-                )
-                for t in TAGS
-            ]
-        )
+        # fetch the counts for all tags
+        comment['tags'] = [
+            tags_collection.count_documents({
+                "comment_id": comment["_id"], "tag_name": tag
+            }) for tag in TAGS
+        ]
 
     # and render
     ctx = default_context(
@@ -375,8 +370,7 @@ def discuss():
         render_format="default",
         comments=comments_list,
         gpid=pid,
-        tags=TAGS,
-        tag_counts=tag_counts,
+        tags=TAGS
     )
     return render_template("discuss.html", **ctx)
 
@@ -460,7 +454,6 @@ def test():
 
 @app.route("/toggletag", methods=["POST"])
 def toggletag():
-
     if not g.user:
         return (
             "You have to be logged in to tag. Sorry - otherwise"
@@ -470,26 +463,26 @@ def toggletag():
 
     # get the tag and validate it as an allowed tag
     tag_name = request.form["tag_name"]
-    if not tag_name in TAGS:
-        print("tag name %s is not in allowed tags." % (tag_name,))
+    comment_id = request.form["comment_id"]
+    if tag_name not in TAGS:
+        print(f"tag name {tag_name} is not in allowed tags.")
         return "Bad tag name. This is most likely Andrej's fault.", 500
 
-    pid = request.form["pid"]
-    comment_id = request.form["comment_id"]
     username = get_username(session["user_id"])
-    time_toggled = time.time()
     entry = {
         "username": username,
-        "pid": pid,
         "comment_id": comment_id,
         "tag_name": tag_name,
-        "time": time_toggled,
+        "pid": request.form["pid"],
+        "time": time.time(),
     }
 
     # remove any existing entries for this user/comment/tag
-    result = tags_collection.delete_one(
-        {"username": username, "comment_id": comment_id, "tag_name": tag_name}
-    )
+    result = tags_collection.delete_one({
+        "username": username,
+        "comment_id": comment_id,
+        "tag_name": tag_name
+    })
     if result.deleted_count > 0:
         print("cleared an existing entry from database")
     else:
