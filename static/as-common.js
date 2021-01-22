@@ -179,10 +179,21 @@ function addPapers(num, dynamic) {
       return function() { window.location.replace('/' + pid); }
     }(p.pid)); // closer over the paper id
 
+    if (p.num_discussion > 0) {
+      var pid = strip_version(p.pid);
+      var donwload_span = ldiv.append('span')
+        .classed('sim', true)
+        .attr('style', 'margin-left:5px; padding-left: 5px; border-left: 1px solid black;')
+        .append('a')
+          .attr('href', 'export?id='+strip_version(p.pid))
+          .attr('target', '_blank')
+          .attr('download', pid+'.tex')
+          .html('export');
+    }
+
     // var review_span = ldiv.append('span').classed('sim', true).attr('style', 'margin-left:5px; padding-left: 5px; border-left: 1px solid black;').append('a').attr('href', 'http://www.shortscience.org/paper?bibtexKey='+p.pid).html('review');
     var discuss_text = p.num_discussion === 0 ? 'discuss' : 'discuss [' + p.num_discussion + ']';
     var discuss_color = p.num_discussion === 0 ? 'black' : 'red';
-
     var review_span = ldiv.append('span')
       .classed('sim', true)
       .attr('style', 'margin-left:5px; padding-left: 5px; border-left: 1px solid black;')
@@ -194,7 +205,6 @@ function addPapers(num, dynamic) {
     ldiv.append('br');
 
     var lib_state_img = p.in_library === 1 ? 'static/saved.png' : 'static/save.png';
-
     var saveimg = ldiv.append('img')
       .attr('src', lib_state_img)
       .classed('save-icon', true)
