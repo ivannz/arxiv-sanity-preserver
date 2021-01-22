@@ -131,7 +131,8 @@ function one_comment(comment) {
     .style('resize', 'none')
     .html(text);
 
-  pin.on('click', function(pin, cid){return function(){
+  pin.on('click', function(cid){return function(){
+    var pin = d3.select(this);
     $.post("/pinmessage", {
       'comment_id': cid
     }).done(function(){
@@ -143,18 +144,20 @@ function one_comment(comment) {
     }).fail(function(jqXHR){
       console.log(jqXHR.responseText);
     });
-  }}(pin, comment._id));
+  }}(comment._id));
 
-  render.on('click', function(render, body, source){return function(){
+  render.on('click', function(body, source){return function(){
     var display = body.style('display');
     body.style('display', source.style('display'));
+
+    var render = d3.select(this);
     source.style('display', display);
     if(render.attr('src') == 'static/journal-text.svg') {
       render.attr('src', 'static/code-slash.svg')
     } else {
       render.attr('src', 'static/journal-text.svg')
     }
-  }}(render, body, source));
+  }}(body, source));
 
   if (typeof MathJax !== 'undefined') {
     MathJax.typeset(body);
