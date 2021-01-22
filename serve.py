@@ -10,6 +10,7 @@ import numpy as np
 from sqlite3 import dbapi2 as sqlite3
 from hashlib import md5
 
+import time
 import flask
 from flask import Flask, request, session, url_for, redirect, \
      render_template, abort, g, flash, _app_ctx_stack
@@ -259,6 +260,28 @@ def rank(request_pid=None):
   papers = papers_similar(request_pid)
   ctx = default_context(papers, render_format='paper')
   return render_template('main.html', **ctx)
+
+@app.route('/export', methods=['GET'])
+def export():
+  pid = request.args.get('id', '')
+  def generate():
+    block = "\\medskip\n"\
+            "%% {pid}, {version}, {time_posted}, {_id}\n"\
+            "%% {user} {anon} '{conf}'\n"\
+            "{text}\n\n\n"
+
+    comments_cursor = comments.find({
+      'pid': pid
+    }).sort([('time_posted', pymongo.ASCENDING)])
+    for comment in comments_cursor:
+      comment['_id'] = str(comment['_id'])
+      dttm = time.gmtime(comment['time_posted'])
+      comment['time_posted'] = time.strftime('%Y-%m-%d %H:%M:%S', dttm)
+      yield block.format(**comment)
+
+  return flask.Response(generate(), mimetype='text/plain'), 200
+  # return flask.send_file('static/missing.jpg', attachment_filename='python.jpg'), 200
+  # return 'ERROR', 500
 
 @app.route('/discuss', methods=['GET'])
 def discuss():
