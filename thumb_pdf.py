@@ -4,6 +4,7 @@ requires: sudo apt-get install imagemagick
 """
 
 import os
+import sys
 import time
 import shutil
 from subprocess import Popen
