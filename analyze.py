@@ -3,6 +3,7 @@ Reads txt files of all papers and computes tfidf vectors for all papers.
 Dumps results to file tfidf.p
 """
 import os
+import tqdm
 import pickle
 from random import shuffle, seed
 
@@ -16,47 +17,37 @@ max_train = 5000  # max number of tfidf training documents (chosen randomly), fo
 max_features = 5000
 
 # read database
-db = pickle.load(open(Config.db_path, "rb"))
+paper_db = pickle.load(open(Config.db_path, "rb"))
 
 # read all text files for all papers into memory
-txt_paths, pids = [], []
-n = 0
-for pid, j in db.items():
-    n += 1
-    idvv = "%sv%d" % (j["_rawid"], j["_version"])
-    txt_path = os.path.join("data", "txt", idvv) + ".pdf.txt"
-    try:
-        with open(txt_path, "r") as f:
-            txt = f.read()
+documents = []
+with tqdm.tqdm(paper_db.items()) as pbar:
+    for pid, paper in pbar:
+        idvv = f"{paper['_rawid']}v{paper['_version']}"
+        txt_path = os.path.join("data", "txt", idvv) + ".pdf.txt"
+        try:
+            with open(txt_path, "rb") as f:
+                n_chars = len(f.read().decode('utf-8', 'replace'))
 
-        if 1000 < len(txt) < 500000:  # 500K is VERY conservative upper bound
-            txt_paths.append(
-                txt_path
-            )  # todo later: maybe filter or something some of them
-            pids.append(idvv)
-            print("read %d/%d (%s) with %d chars" % (n, len(db), idvv, len(txt)))
+        except FileNotFoundError:
+            # some pdfs dont translate to txt
+            pbar.write(f"could not find {txt_path} in txt folder.")
+            continue
+
+        pbar.set_description(f"{idvv} with {n_chars} chars")
+        if 1000 < n_chars < 500000:  # 500K is VERY conservative upper bound
+            # todo later: maybe filter or something some of them
+            documents.append((idvv, txt_path))
         else:
-            print(
-                "skipped %d/%d (%s) with %d chars: suspicious!"
-                % (n, len(db), idvv, len(txt))
-            )
+            pbar.write(f"skipped {idvv} with {n_chars} chars: suspicious!")
 
-    except FileNotFoundError:
-        # some pdfs dont translate to txt
-        print("could not find %s in txt folder." % (txt_path,))
-
-    except UnicodeDecodeError as e:
-        # some pdfs translate poorly to txt
-        print(str(e))
-        print("unicode error in %s in txt folder." % (txt_path,))
-
-print(
-    "in total read in %d text files out of %d db entries." % (len(txt_paths), len(db))
-)
+pids, txt_paths = zip(*documents)
+print(f"in total read in {len(txt_paths)} text"
+      f" files out of {len(paper_db)} db entries.")
 
 # compute tfidf vectors with scikits
 v = TfidfVectorizer(
-    input="content",
+    input="filename",  # input="content",
     encoding="utf-8",
     decode_error="replace",
     strip_accents="unicode",
@@ -74,56 +65,46 @@ v = TfidfVectorizer(
     min_df=1,
 )
 
-# create an iterator object to conserve memory
-def make_corpus(paths):
-    for p in paths:
-        with open(p, "r") as f:
-            txt = f.read()
-        yield txt
-
 
 # train
-train_txt_paths = list(txt_paths)  # duplicate
-shuffle(train_txt_paths)  # shuffle
-train_txt_paths = train_txt_paths[: min(len(train_txt_paths), max_train)]  # crop
-print("training on %d documents..." % (len(train_txt_paths),))
-train_corpus = make_corpus(train_txt_paths)
-v.fit(train_corpus)
+n_train = min(len(txt_paths), max_train)
+print(f"training on {n_train} documents...")
 
-# transform
-print("transforming %d documents..." % (len(txt_paths),))
-corpus = make_corpus(txt_paths)
-X = v.transform(corpus)
+# duplicate, shuffle, split and train, then transform
+train_txt_paths = list(txt_paths)
+shuffle(train_txt_paths)
+v.fit(train_txt_paths[:n_train])
+
+print(f"transforming {len(txt_paths)} documents...")
+X = v.transform(txt_paths)
+
 print(v.vocabulary_)
 print(X.shape)
 
-# write full matrix out
-out = {}
-out["X"] = X  # this one is heavy!
+# write full matrix out, this one is heavy!
 print("writing", Config.tfidf_path)
-safe_pickle_dump(out, Config.tfidf_path)
+safe_pickle_dump({"X": X}, Config.tfidf_path)
 
 # writing lighter metadata information into a separate (smaller) file
-out = {}
-out["vocab"] = v.vocabulary_
-out["idf"] = v._tfidf.idf_
-out["pids"] = pids  # a full idvv string (id and version number)
-out["ptoi"] = {x: i for i, x in enumerate(pids)}  # pid to ix in X mapping
 print("writing", Config.meta_path)
-safe_pickle_dump(out, Config.meta_path)
+safe_pickle_dump({
+    'vocad': v.vocabulary_,
+    'idf': v._tfidf.idf_,
+    'pids': pids,  # a full idvv string (id and version number)
+    'ptoi': {x: i for i, x in enumerate(pids)}  # pid to ix in X mapping
+}, Config.meta_path)
 
 print("precomputing nearest neighbor queries in batches...")
 X = X.todense()  # originally it's a sparse matrix
 sim_dict = {}
 batch_size = 200
-for i in range(0, len(pids), batch_size):
+for i in tqdm.trange(0, len(pids), batch_size):
     i1 = min(len(pids), i + batch_size)
     xquery = X[i:i1]  # BxD
     ds = -np.asarray(np.dot(X, xquery.T))  # NxD * DxB => NxB
     IX = np.argsort(ds, axis=0)  # NxB
     for j in range(i1 - i):
         sim_dict[pids[i + j]] = [pids[q] for q in list(IX[:50, j])]
-    print("%d/%d..." % (i, len(pids)))
 
 print("writing", Config.sim_path)
 safe_pickle_dump(sim_dict, Config.sim_path)
