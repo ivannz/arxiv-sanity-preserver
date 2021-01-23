@@ -1,29 +1,34 @@
-from contextlib import contextmanager
-
 import os
 import re
 import pickle
 import tempfile
 
+from contextlib import contextmanager
+
+
 # global settings
 # -----------------------------------------------------------------------------
-class Config(object):
+class Config:
     # main paper information repo file
     db_path = "db.p"
+
     # intermediate processing folders
     pdf_dir = os.path.join("data", "pdf")
     txt_dir = os.path.join("data", "txt")
     thumbs_dir = os.path.join("static", "thumbs")
+
     # intermediate pickles
     tfidf_path = "tfidf.p"
     meta_path = "tfidf_meta.p"
     sim_path = "sim_dict.p"
     user_sim_path = "user_sim.p"
+
     # sql database file
     db_serve_path = "db2.p"  # an enriched db.p with various preprocessing info
     database_path = "as.db"
     serve_cache_path = "serve_cache.p"
 
+    # other
     beg_for_hosting_money = 1  # do we beg the active users randomly for money? 0 = no.
     banned_path = "banned.txt"  # for twitter users who are banned
     tmp_dir = "tmp"
@@ -52,9 +57,7 @@ def _tempfile(*args, **kws):
         try:
             os.remove(name)
         except OSError as e:
-            if e.errno == 2:
-                pass
-            else:
+            if e.errno != 2:
                 raise e
 
 
@@ -102,4 +105,4 @@ def strip_version(idstr):
 
 # "1511.08198v1" is an example of a valid arxiv id that we accept
 def isvalidid(pid):
-    return re.match("^\d+\.\d+(v\d+)?$", pid)
+    return re.match(r"^\d+\.\d+(v\d+)?$", pid)
