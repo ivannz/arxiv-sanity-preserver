@@ -43,46 +43,51 @@ os.makedirs(Config.thumbs_dir, exist_ok=True)
 
 # iterate over all pdf files and create the thumbnails
 root, _, filenames = next(os.walk(os.path.join("data", "pdf")))
-for i, filename in enumerate(tqdm.tqdm(filenames)):
-    pdf_path = os.path.join(root, filename)
-    thumb_path = os.path.join(Config.thumbs_dir, filename + ".jpg")
-    if os.path.isfile(thumb_path):
-        tqdm.tqdm.write(f"skipping {pdf_path}, thumbnail already exists.")
-        continue
+with tqdm.tqdm(filenames) as pbar:
+    for i, filename in enumerate(pbar):
+        if not filename.endswith('.pdf'):
+            continue
 
-    if not filename.endswith('.pdf'):
-        continue
+        pdf_path = os.path.join(root, filename)
+        thumb_path = os.path.join(Config.thumbs_dir, filename + ".jpg")
+        if os.path.isfile(thumb_path):
+            pbar.write(f"skipping {pdf_path}, thumbnail already exists.")
+            continue
 
-    with TemporaryDirectory(dir=Config.tmp_dir) as tmpdir:
-        # montage {pdf_path}[0-7] -mode Concatenate -tile x1
-        #  -quality 80 -resize x230 -trim thumbs/{f}.jpg
-        try:
-            # generate thumbnails of pages 1-8: thumb-0.png .. thumb-7.png
-            pp = Popen([
-                "convert",
-                f"{pdf_path}[0-7]", "-thumbnail", "x156",
-                os.path.join(tmpdir, "thumb.png")
-            ], stdout=DEVNULL, stderr=DEVNULL)
+        pbar.set_description(filename)
+        with TemporaryDirectory(dir=Config.tmp_dir) as tmpdir:
+            # montage {pdf_path}[0-7] -mode Concatenate -tile x1
+            #  -quality 80 -resize x230 -trim thumbs/{f}.jpg
+            try:
+                # generate thumbnails of pages 1-8: thumb-0.png .. thumb-7.png
+                pp = Popen([
+                    "convert",
+                    f"{pdf_path}[0-7]", "-thumbnail", "x156",
+                    os.path.join(tmpdir, "thumb.png")
+                ], stdout=DEVNULL, stderr=DEVNULL)
 
-            # convert can unfortunately enter an infinite loop, so we wait
-            ret = pp.wait(timeout=20)
+                # convert can unfortunately enter an infinite loop, so we wait
+                ret = pp.wait(timeout=20)
 
-        except TimeoutExpired:
-            pp.terminate()
-            tqdm.tqdm.write("convert command did not terminate"
-                            " in 20 seconds, terminating.")
+                # tile images horizontally
+                if os.path.isfile(os.path.join(tmpdir, "thumb-0.png")):
+                    run([
+                        "montage",
+                        "-mode", "concatenate",
+                        "-quality", "80",
+                        "-tile", "x1",
+                        os.path.join(tmpdir, "thumb-*.png"), thumb_path
+                    ], capture_output=True)
 
-        if os.path.isfile(os.path.join(tmpdir, "thumb-0.png")):
-            # tile images horizontally
-            run([
-                "montage",
-                "-mode", "concatenate", "-quality", "80", "-tile", "x1",
-                os.path.join(tmpdir, "thumb-*.png"), thumb_path
-            ], capture_output=True)
+            except TimeoutExpired:
+                pp.terminate()
+                pbar.write("convert command did not terminate"
+                           " in 20 seconds, terminating.")
 
-        else:
+        # If no file has been produced, then use a placeholder
+        if not os.path.isfile(thumb_path):
             run([
                 "cp", os.path.join("static", "missing.jpg"), thumb_path
             ], capture_output=True)
             # we can also let HTML+JS handle nonexistent thumbnails
-            tqdm.tqdm.write("could not render pdf")
+            pbar.write("could not render pdf")
