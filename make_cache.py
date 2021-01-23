@@ -21,7 +21,7 @@ sqldb.row_factory = sqlite3.Row  # to return dicts rather than tuples
 CACHE = {}
 
 print("loading the paper database", Config.db_path)
-db = pickle.load(open(Config.db_path, "rb"))
+paper_db = pickle.load(open(Config.db_path, "rb"))
 
 print("loading tfidf_meta", Config.meta_path)
 meta = pickle.load(open(Config.meta_path, "rb"))
@@ -29,7 +29,7 @@ vocab = meta["vocab"]
 idf = meta["idf"]
 
 print("decorating the database with additional information...")
-for pid, p in db.items():
+for pid, p in paper_db.items():
     timestruct = dateutil.parser.parse(p["updated"])
     p["time_updated"] = int(
         timestruct.strftime("%s")
@@ -42,16 +42,16 @@ for pid, p in db.items():
 print("computing min/max time for all papers...")
 tts = [
     time.mktime(dateutil.parser.parse(p["updated"]).timetuple())
-    for pid, p in db.items()
+    for pid, p in paper_db.items()
 ]
 ttmin = min(tts) * 1.0
 ttmax = max(tts) * 1.0
-for pid, p in db.items():
+for pid, p in paper_db.items():
     tt = time.mktime(dateutil.parser.parse(p["updated"]).timetuple())
     p["tscore"] = (tt - ttmin) / (ttmax - ttmin)
 
 print("precomputing papers date sorted...")
-scores = [(p["time_updated"], pid) for pid, p in db.items()]
+scores = [(p["time_updated"], pid) for pid, p in paper_db.items()]
 scores.sort(reverse=True, key=lambda x: x[0])
 CACHE["date_sorted_pids"] = [sp[1] for sp in scores]
 
@@ -73,11 +73,8 @@ trans_table = {ord(c): None for c in punc}
 def makedict(s, forceidf=None, scale=1.0):
     words = set(s.lower().translate(trans_table).strip().split())
     idfd = {}
-    for (
-        w
-    ) in (
-        words
-    ):  # todo: if we're using bigrams in vocab then this won't search over them
+    # todo: if we're using bigrams in vocab then this won't search over them
+    for w in words:
         if forceidf is None:
             if w in vocab:
                 # we have idf for this
@@ -90,7 +87,7 @@ def makedict(s, forceidf=None, scale=1.0):
     return idfd
 
 
-def merge_dicts(dlist):
+def merge_dicts(*dlist):
     m = {}
     for d in dlist:
         for k, v in d.items():
@@ -100,7 +97,7 @@ def merge_dicts(dlist):
 
 print("building an index for faster search...")
 search_dict = {}
-for pid, p in db.items():
+for pid, p in paper_db.items():
     dict_title = makedict(p["title"], forceidf=5, scale=3)
     dict_authors = makedict(" ".join(x["name"] for x in p["authors"]), forceidf=5)
     dict_categories = {x["term"].lower(): 5 for x in p["tags"]}
@@ -109,7 +106,7 @@ for pid, p in db.items():
         del dict_authors["and"]
     dict_summary = makedict(p["summary"])
     search_dict[pid] = merge_dicts(
-        [dict_title, dict_authors, dict_categories, dict_summary]
+        dict_title, dict_authors, dict_categories, dict_summary
     )
 CACHE["search_dict"] = search_dict
 
@@ -117,4 +114,4 @@ CACHE["search_dict"] = search_dict
 print("writing", Config.serve_cache_path)
 safe_pickle_dump(CACHE, Config.serve_cache_path)
 print("writing", Config.db_serve_path)
-safe_pickle_dump(db, Config.db_serve_path)
+safe_pickle_dump(paper_db, Config.db_serve_path)
