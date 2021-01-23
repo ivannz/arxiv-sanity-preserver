@@ -44,7 +44,7 @@ for i, f in enumerate(
 
     pdf_path = os.path.join(Config.pdf_dir, f)
     txt_path = os.path.join(Config.txt_dir, txt_basename)
-    cmd = "pdftotext %s %s" % (pdf_path, txt_path)
+    cmd = f"pdftotext -enc UTF-8 {pdf_path} {txt_path}"
     os.system(cmd)
 
     print("%d/%d %s" % (i, len(files), cmd))
