@@ -25,12 +25,11 @@ for pid, j in db.items():
     n += 1
     idvv = "%sv%d" % (j["_rawid"], j["_version"])
     txt_path = os.path.join("data", "txt", idvv) + ".pdf.txt"
-    if os.path.isfile(txt_path):  # some pdfs dont translate to txt
+    try:
         with open(txt_path, "r") as f:
             txt = f.read()
-        if (
-            len(txt) > 1000 and len(txt) < 500000
-        ):  # 500K is VERY conservative upper bound
+
+        if 1000 < len(txt) < 500000:  # 500K is VERY conservative upper bound
             txt_paths.append(
                 txt_path
             )  # todo later: maybe filter or something some of them
@@ -41,8 +40,16 @@ for pid, j in db.items():
                 "skipped %d/%d (%s) with %d chars: suspicious!"
                 % (n, len(db), idvv, len(txt))
             )
-    else:
+
+    except FileNotFoundError:
+        # some pdfs dont translate to txt
         print("could not find %s in txt folder." % (txt_path,))
+
+    except UnicodeDecodeError as e:
+        # some pdfs translate poorly to txt
+        print(str(e))
+        print("unicode error in %s in txt folder." % (txt_path,))
+
 print(
     "in total read in %d text files out of %d db entries." % (len(txt_paths), len(db))
 )
