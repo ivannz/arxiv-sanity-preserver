@@ -88,7 +88,7 @@ safe_pickle_dump({"X": X}, Config.tfidf_path)
 # writing lighter metadata information into a separate (smaller) file
 print("writing", Config.meta_path)
 safe_pickle_dump({
-    'vocad': v.vocabulary_,
+    'vocab': v.vocabulary_,
     'idf': v._tfidf.idf_,
     'pids': pids,  # a full idvv string (id and version number)
     'ptoi': {x: i for i, x in enumerate(pids)}  # pid to ix in X mapping
