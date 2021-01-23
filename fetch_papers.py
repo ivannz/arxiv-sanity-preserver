@@ -10,6 +10,8 @@ import pickle
 import random
 import argparse
 import urllib.request
+import requests
+
 import feedparser
 
 from utils import Config, safe_pickle_dump
@@ -21,15 +23,9 @@ def encode_feedparser_dict(d):
     I hate when libs wrap simple things in their own classes.
     """
     if isinstance(d, feedparser.FeedParserDict) or isinstance(d, dict):
-        j = {}
-        for k in d.keys():
-            j[k] = encode_feedparser_dict(d[k])
-        return j
+        return {k: encode_feedparser_dict(d[k]) for k in d.keys()}
     elif isinstance(d, list):
-        l = []
-        for k in d:
-            l.append(encode_feedparser_dict(k))
-        return l
+        return [encode_feedparser_dict(k) for k in d]
     else:
         return d
 
@@ -39,11 +35,9 @@ def parse_arxiv_url(url):
     examples is http://arxiv.org/abs/1512.08756v2
     we want to extract the raw id and the version
     """
-    ix = url.rfind("/")
-    idversion = url[ix + 1 :]  # extract just the id (and the version)
-    parts = idversion.split("v")
-    assert len(parts) == 2, "error parsing url " + url
-    return parts[0], int(parts[1])
+    _, idversion = url.rsplit('/', 1)
+    pid, ver = idversion.rsplit('v', 1)
+    return pid, int(ver)
 
 
 if __name__ == "__main__":
@@ -53,7 +47,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--search-query",
         type=str,
-        default="cat:cs.CV+OR+cat:cs.AI+OR+cat:cs.LG+OR+cat:cs.CL+OR+cat:cs.NE+OR+cat:stat.ML",
+        default="cat:cs.CV OR cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.NE OR cat:stat.ML",
         help="query used for arxiv API. See http://arxiv.org/help/api/user-manual#detailed_examples",
     )
     parser.add_argument(
@@ -82,75 +76,62 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # misc hardcoded variables
-    base_url = "http://export.arxiv.org/api/query?"  # base api query url
-    print("Searching arXiv for %s" % (args.search_query,))
-
     # lets load the existing database to memory
+    paper_db = {}
     try:
-        db = pickle.load(open(Config.db_path, "rb"))
+        paper_db = pickle.load(open(Config.db_path, "rb"))
+
     except Exception as e:
-        print("error loading existing database:")
-        print(e)
+        print(f"error loading existing database {str(e)}\n")
         print("starting from an empty database")
-        db = {}
+    print(f"database has {len(paper_db)} entries at start")
 
-    # -----------------------------------------------------------------------------
     # main loop where we fetch the new results
-    print("database has %d entries at start" % (len(db),))
     num_added_total = 0
+    print(f"Searching arXiv for {args.search_query}")
     for i in range(args.start_index, args.max_index, args.results_per_iteration):
+        print(f"Results {i} - {i + args.results_per_iteration}")
+        response = requests.get("http://export.arxiv.org/api/query", params={
+            "search_query": args.search_query,
+            "sortBy": "lastUpdatedDate",
+            "start": i,
+            "max_results": args.results_per_iteration
+        })
 
-        print("Results %i - %i" % (i, i + args.results_per_iteration))
-        query = "search_query=%s&sortBy=lastUpdatedDate&start=%i&max_results=%i" % (
-            args.search_query,
-            i,
-            args.results_per_iteration,
-        )
-        with urllib.request.urlopen(base_url + query) as url:
-            response = url.read()
-        parse = feedparser.parse(response)
-        num_added = 0
-        num_skipped = 0
-        for e in parse.entries:
+        feed = feedparser.parse(response.text)
+        if len(feed.entries) == 0:
+            print("Received no results from arxiv. Rate limiting? "
+                  "Exiting. Restart later maybe.")
+            print(response.text)
+            break
 
-            j = encode_feedparser_dict(e)
-
+        num_added, num_skipped = 0, 0
+        for entry in map(encode_feedparser_dict, feed.entries):
             # extract just the raw arxiv id and version for this paper
-            rawid, version = parse_arxiv_url(j["id"])
-            j["_rawid"] = rawid
-            j["_version"] = version
+            rawid, version = parse_arxiv_url(entry["id"])
+            entry["_rawid"], entry["_version"] = rawid, version
 
             # add to our database if we didn't have it before, or if this is a new version
-            if not rawid in db or j["_version"] > db[rawid]["_version"]:
-                db[rawid] = j
-                print(
-                    "Updated %s added %s"
-                    % (j["updated"].encode("utf-8"), j["title"].encode("utf-8"))
-                )
+            if rawid not in paper_db or version > paper_db[rawid]["_version"]:
+                paper_db[rawid] = entry
+                print(f"Updated {entry['updated']} added {entry['title']}")
                 num_added += 1
-                num_added_total += 1
             else:
                 num_skipped += 1
 
         # print some information
         print("Added %d papers, already had %d." % (num_added, num_skipped))
-
-        if len(parse.entries) == 0:
-            print(
-                "Received no results from arxiv. Rate limiting? Exiting. Restart later maybe."
-            )
-            print(response)
-            break
+        num_added_total += num_added
 
         if num_added == 0 and args.break_on_no_added == 1:
-            print("No new papers were added. Assuming no new papers exist. Exiting.")
+            print("No new papers were added. Assuming "
+                  "no new papers exist. Exiting.")
             break
 
-        print("Sleeping for %i seconds" % (args.wait_time,))
+        print(f"Sleeping for {args.wait_time} seconds")
         time.sleep(args.wait_time + random.uniform(0, 3))
 
     # save the database before we quit, if we found anything new
     if num_added_total > 0:
-        print("Saving database with %d papers to %s" % (len(db), Config.db_path))
-        safe_pickle_dump(db, Config.db_path)
+        print(f"Saving database with {len(paper_db)} papers to {Config.db_path}")
+        safe_pickle_dump(paper_db, Config.db_path)
