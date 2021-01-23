@@ -1,4 +1,5 @@
 import os
+import tqdm
 import time
 import pickle
 import shutil
@@ -8,40 +9,41 @@ from urllib.request import urlopen
 from utils import Config
 
 timeout_secs = 10  # after this many seconds we give up on a paper
-os.makedirs(Config.pdf_dir, existok=True)
-
-have = set(os.listdir(Config.pdf_dir))  # get list of all pdfs we already have
-
-numok = 0
-numtot = 0
+os.makedirs(Config.pdf_dir, exist_ok=True)
 
 paper_db = pickle.load(open(Config.db_path, "rb"))
-for pid, paper in paper_db.items():
 
-    pdfs = [x["href"] for x in paper["links"]
-            if x["type"] == "application/pdf"]
-    assert len(pdfs) == 1
+numok, numtot = 0, 0
+with tqdm.tqdm(paper_db.items()) as pbar:
+    for pid, paper in pbar:
 
-    pdf_url = pdfs[0] + ".pdf"
-    _, basename = pdf_url.rsplit("/", 1)
-    fname = os.path.join(Config.pdf_dir, basename)
+        pdfs = [x["href"] for x in paper["links"]
+                if x["type"] == "application/pdf"]
+        assert len(pdfs) == 1
 
-    # try retrieve the pdf
-    numtot += 1
-    try:
-        if basename in have:
-            print(f"fetching {pdf_url} into {fname}")
-            req = urlopen(pdf_url, None, timeout_secs)
-            with open(fname, "wb") as fp:
-                shutil.copyfileobj(req, fp)
+        pdf_url = pdfs[0] + ".pdf"
+        _, basename = pdf_url.rsplit("/", 1)
+        filename = os.path.join(Config.pdf_dir, basename)
 
-            time.sleep(0.05 + random.uniform(0, 0.1))
-        else:
-            print(f"{fname} exists, skipping")
+        pbar.set_description(pdf_url)
+        numtot += 1
+
+        # try retrieve the pdf
+        try:
+            if not os.path.isfile(filename):
+                req = urlopen(pdf_url, None, timeout_secs)
+                with open(filename, "wb") as fp:
+                    shutil.copyfileobj(req, fp)
+
+                time.sleep(0.05 + random.uniform(0, 0.1))
+
+            else:
+                pbar.write(f"{filename} exists, skipping")
+
+        except Exception as e:
+            pbar.write(f'error downloading {pdf_url}: {str(e)}')
+            continue
+
         numok += 1
-    except Exception as e:
-        print("error downloading: ", pdf_url)
-        print(e)
-    print(f"{numok}/{numtot} of {len(paper_db)} downloaded ok.")
 
-print("final number of papers downloaded okay: {numok}/{len(paper_db)}")
+print(f"final number of papers downloaded okay: {numok}/{len(paper_db)}")
