@@ -38,9 +38,13 @@ if os.path.isfile("secret_key.txt"):
     SECRET_KEY = open("secret_key.txt", "r").read()
 else:
     SECRET_KEY = "devkey, should be in a file"
+
 app = Flask(__name__)
 app.config.from_object(__name__)
-limiter = Limiter(app, global_limits=["100 per hour", "20 per minute"])
+limiter = Limiter(app, global_limits=[
+    "100 per hour",
+    "20 per minute"
+])
 
 # -----------------------------------------------------------------------------
 # utilities for database interactions
@@ -75,25 +79,25 @@ def get_username(user_id):
 # connection handlers
 # -----------------------------------------------------------------------------
 
-
 @app.before_request
 def before_request():
     # this will always request database connection, even if we dont end up using it ;\
-    g.db = connect_db()
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = connect_db()
+
     # retrieve user object from the database if user_id is set
     g.user = None
     if "user_id" in session:
-        g.user = query_db(
-            "select * from user where user_id = ?", [session["user_id"]], one=True
-        )
+        g.user = query_db("select * from user where user_id = ?",
+                          [session["user_id"]], one=True)
 
 
 @app.teardown_request
 def teardown_request(exception):
-    db = getattr(g, "db", None)
+    db = getattr(g, "_database", None)
     if db is not None:
         db.close()
-
 
 # -----------------------------------------------------------------------------
 # search/sort functionality
@@ -104,7 +108,7 @@ def papers_search(qraw):
     qparts = qraw.lower().strip().split()  # split by spaces
     # use reverse index and accumulate scores
     scores = []
-    for pid, p in db.items():
+    for pid, p in paper_db.items():
         score = sum(SEARCH_DICT[pid].get(q, 0) for q in qparts)
         if score == 0:
             continue  # no match whatsoever, dont include
@@ -120,13 +124,13 @@ def papers_similar(pid):
     rawpid = strip_version(pid)
 
     # check if we have this paper at all, otherwise return empty list
-    if not rawpid in db:
+    if not rawpid in paper_db:
         return []
 
     # check if we have distances to this specific version of paper id (includes version)
     if pid in sim_dict:
         # good, simplest case: lets return the papers
-        return [db[strip_version(k)] for k in sim_dict[pid]]
+        return [paper_db[strip_version(k)] for k in sim_dict[pid]]
     else:
         # ok we don't have this specific version. could be a stale URL that points to,
         # e.g. v1 of a paper, but due to an updated version of it we only have v2 on file
@@ -136,10 +140,10 @@ def papers_similar(pid):
         if kok:
             # ok we have at least one different version of this paper, lets use it instead
             id_use_instead = kok[0]
-            return [db[strip_version(k)] for k in sim_dict[id_use_instead]]
+            return [paper_db[strip_version(k)] for k in sim_dict[id_use_instead]]
         else:
             # return just the paper. we dont have similarities for it for some reason
-            return [db[rawpid]]
+            return [paper_db[rawpid]]
 
 
 def papers_from_library():
@@ -149,7 +153,7 @@ def papers_from_library():
         uid = session["user_id"]
         user_library = query_db("""select * from library where user_id = ?""", [uid])
         libids = [strip_version(x["paper_id"]) for x in user_library]
-        out = [db[x] for x in libids]
+        out = [paper_db[x] for x in libids]
         out = sorted(out, key=lambda k: k["updated"], reverse=True)
     return out
 
@@ -167,7 +171,7 @@ def papers_from_svm(recent_days=None):
         libids = {strip_version(x["paper_id"]) for x in user_library}
 
         plist = user_sim[uid]
-        out = [db[x] for x in plist if not x in libids]
+        out = [paper_db[x] for x in plist if not x in libids]
 
         if recent_days is not None:
             # filter as well to only most recent papers
@@ -272,7 +276,7 @@ def default_context(papers, **kws):
     ans = dict(
         papers=top_papers,
         numresults=len(papers),
-        totpapers=len(db),
+        totpapers=len(paper_db),
         tweets=[],
         msg="",
         show_prompt=show_prompt,
@@ -298,7 +302,7 @@ def goaway():
 @app.route("/")
 def intmain():
     vstr = request.args.get("vfilter", "all")
-    papers = [db[pid] for pid in DATE_SORTED_PIDS]  # precomputed
+    papers = [paper_db[pid] for pid in DATE_SORTED_PIDS]  # precomputed
     papers = papers_filter_version(papers, vstr)
     ctx = default_context(
         papers, render_format="recent", msg="Showing most recent Arxiv papers:"
@@ -345,7 +349,7 @@ def export():
 def discuss():
     """ return discussion related to a paper """
     pid = request.args.get("id", "")  # paper id of paper we wish to discuss
-    papers = [db[pid]] if pid in db else []
+    papers = [paper_db[pid]] if pid in paper_db else []
 
     # fetch the comments
     comments_cursor = comments.find({"pid": pid}).sort(
@@ -389,9 +393,9 @@ def comment():
     # process the raw pid and validate it, etc
     try:
         pid = request.form["pid"]
-        if not pid in db:
+        if pid not in paper_db:
             raise Exception("invalid pid")
-        version = db[pid]["_version"]  # most recent version of this paper
+        version = paper_db[pid]["_version"]  # most recent version of this paper
     except Exception as e:
         print(e)
         return "bad pid. This is most likely Andrej's fault.", 500
@@ -425,9 +429,9 @@ def discussions():
     have = set()
     for e in comms_cursor:
         pid = e["pid"]
-        if pid in db and not pid in have:
+        if pid in paper_db and pid not in have:
             have.add(pid)
-            papers.append(db[pid])
+            papers.append(paper_db[pid])
 
     ctx = default_context(papers, render_format="discussions")
     return render_template("main.html", **ctx)
@@ -536,7 +540,7 @@ def top():
     }
     tt = legend.get(ttstr, 7)
     curtime = int(time.time())  # in seconds
-    top_sorted_papers = [db[p] for p in TOP_SORTED_PIDS]
+    top_sorted_papers = [paper_db[p] for p in TOP_SORTED_PIDS]
     papers = [
         p
         for p in top_sorted_papers
@@ -557,8 +561,8 @@ def toptwtr():
     cursor = tweets_top.find().sort([("vote", pymongo.DESCENDING)]).limit(100)
     papers, tweets = [], []
     for rec in cursor:
-        if rec["pid"] in db:
-            papers.append(db[rec["pid"]])
+        if rec["pid"] in paper_db:
+            papers.append(paper_db[rec["pid"]])
             tweet = {k: v for k, v in rec.items() if k != "_id"}
             tweets.append(tweet)
     ctx = default_context(
@@ -601,7 +605,7 @@ def review():
     if not isvalidid(idvv):
         return "NO"  # fail, malformed id. weird.
     pid = strip_version(idvv)
-    if not pid in db:
+    if pid not in paper_db:
         return "NO"  # we don't know this paper. wat
 
     uid = session["user_id"]  # id of logged in user
@@ -661,13 +665,13 @@ def friends():
             )
             libids = [strip_version(x["paper_id"]) for x in user_library]
             for lid in libids:
-                if not lid in counts:
+                if lid not in counts:
                     counts[lid] = []
                 counts[lid].append(whom)
 
         keys = list(counts.keys())
         keys.sort(key=lambda k: len(counts[k]), reverse=True)  # descending by count
-        papers = [db[x] for x in keys]
+        papers = [paper_db[x] for x in keys]
         # finally filter by date
         curtime = int(time.time())  # in seconds
         papers = [
@@ -699,25 +703,19 @@ def friends():
 
 @app.route("/account")
 def account():
-    ctx = {"totpapers": len(db)}
-
-    followers = []
-    following = []
+    following, followers = [], []
     # fetch all followers/following of the logged in user
     if g.user:
         username = get_username(session["user_id"])
-
-        following_db = list(follow_collection.find({"who": username}))
-        for e in following_db:
+        for e in follow_collection.find({"who": username}):
             following.append({"user": e["whom"], "active": e["active"]})
 
-        followers_db = list(follow_collection.find({"whom": username}))
-        for e in followers_db:
+        for e in follow_collection.find({"whom": username}):
             followers.append({"user": e["who"], "active": e["active"]})
 
-    ctx["followers"] = followers
-    ctx["following"] = following
-    return render_template("account.html", **ctx)
+    return render_template(
+        "account.html", totpapers=len(paper_db),
+        followers=followers, following=following)
 
 
 @app.route("/requestfollow", methods=["POST"])
@@ -868,7 +866,7 @@ if __name__ == "__main__":
         os.system("sqlite3 as.db < schema.sql")
 
     print("loading the paper database", Config.db_serve_path)
-    db = pickle.load(open(Config.db_serve_path, "rb"))
+    paper_db = pickle.load(open(Config.db_serve_path, "rb"))
 
     print("loading tfidf_meta", Config.meta_path)
     meta = pickle.load(open(Config.meta_path, "rb"))
