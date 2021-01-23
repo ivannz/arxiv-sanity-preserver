@@ -58,7 +58,7 @@ def connect_db():
 
 def query_db(query, args=(), one=False):
     """Queries the database and returns a list of dictionaries."""
-    cur = g.db.execute(query, args)
+    cur = g._database.execute(query, args)
     rv = cur.fetchall()
     return (rv[0] if rv else None) if one else rv
 
@@ -622,20 +622,20 @@ def review():
     ret = "NO"
     if record:
         # record exists, erase it.
-        g.db.execute(
+        g._database.execute(
             """delete from library where user_id = ? and paper_id = ?""", [uid, pid]
         )
-        g.db.commit()
+        g._database.commit()
         # print('removed %s for %s' % (pid, uid))
         ret = "OFF"
     else:
         # record does not exist, add it.
         rawpid = strip_version(pid)
-        g.db.execute(
+        g._database.execute(
             """insert into library (paper_id, user_id, update_time) values (?, ?, ?)""",
             [rawpid, uid, int(time.time())],
         )
-        g.db.commit()
+        g._database.commit()
         # print('added %s for %s' % (pid, uid))
         ret = "ON"
 
@@ -811,7 +811,7 @@ def login():
     else:
         # create account and log in
         creation_time = int(time.time())
-        g.db.execute(
+        g._database.execute(
             """insert into user (username, pw_hash, creation_time) values (?, ?, ?)""",
             [
                 request.form["username"],
@@ -819,8 +819,8 @@ def login():
                 creation_time,
             ],
         )
-        user_id = g.db.execute("select last_insert_rowid()").fetchall()[0][0]
-        g.db.commit()
+        user_id = g._database.execute("select last_insert_rowid()").fetchall()[0][0]
+        g._database.commit()
 
         session["user_id"] = user_id
         flash("New account %s created" % (request.form["username"],))
