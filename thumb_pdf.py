@@ -69,7 +69,8 @@ for i, filename in enumerate(tqdm.tqdm(filenames)):
 
         except TimeoutExpired:
             pp.terminate()
-            print("convert command did not terminate in 20 seconds, terminating.")
+            tqdm.tqdm.write("convert command did not terminate"
+                            " in 20 seconds, terminating.")
 
         if os.path.isfile(os.path.join(tmpdir, "thumb-0.png")):
             # tile images horizontally
@@ -84,4 +85,4 @@ for i, filename in enumerate(tqdm.tqdm(filenames)):
                 "cp", os.path.join("static", "missing.jpg"), thumb_path
             ], capture_output=True)
             # we can also let HTML+JS handle nonexistent thumbnails
-            print("could not render pdf, defaulting to a placeholder")
+            tqdm.tqdm.write("could not render pdf")
