@@ -239,6 +239,7 @@ function one_paper(paper) {
     node.append('div')
       .classed('animg', true)
       .append('img')
+        .attr('onerror', "this.onerror=null; this.src='static/missing.jpg'")
         .attr('src', paper.img);
   }
 
