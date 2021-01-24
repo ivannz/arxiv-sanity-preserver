@@ -11,6 +11,9 @@ import math
 import pickle
 import datetime
 
+import yaml
+from yaml import CLoader
+
 from dateutil import parser
 import twitter  # pip install python-twitter
 import pymongo
@@ -27,8 +30,15 @@ max_tweet_records = 15
 # convenience functions
 # -----------------------------------------------------------------------------
 def get_keys():
-    lines = open("twitter.txt", "r").read().splitlines()
-    return lines
+    keys = yaml.load(open('twitter.yaml', 'rt'),
+                     Loader=CLoader)['project-sanity']
+    return (
+        keys['consumer_key'],
+        keys['consumer_secret'],
+        keys['access_key'],
+        keys['access_secret'],
+    )
+    # return open("twitter.txt", "r").read().splitlines()
 
 
 def extract_arxiv_pids(r):
@@ -46,8 +56,7 @@ def get_latest_or_loop(q):
     while results is None:
         try:
             results = api.GetSearch(
-                raw_query="q=%s&result_type=recent&count=100" % (q,)
-            )
+                raw_query=f"q={q}&result_type=recent&count=100")
         except Exception as e:
             print("there was some problem (waiting some time and trying again):")
             print(e)
@@ -84,20 +93,16 @@ tweets = mdb.tweets  # the "tweets" collection in "arxiv" database
 tweets_top1 = mdb.tweets_top1
 tweets_top7 = mdb.tweets_top7
 tweets_top30 = mdb.tweets_top30
-print("mongodb tweets collection size:", tweets.count())
-print("mongodb tweets_top1 collection size:", tweets_top1.count())
-print("mongodb tweets_top7 collection size:", tweets_top7.count())
-print("mongodb tweets_top30 collection size:", tweets_top30.count())
+print("mongodb tweets collection size:", tweets.count_documents({}))
+print("mongodb tweets_top1 collection size:", tweets_top1.count_documents({}))
+print("mongodb tweets_top7 collection size:", tweets_top7.count_documents({}))
+print("mongodb tweets_top30 collection size:", tweets_top30.count_documents({}))
 
 # load banned accounts
-banned = {}
+banned = set()
 if os.path.isfile(Config.banned_path):
-    with open(Config.banned_path, "r") as f:
-        lines = f.read().split("\n")
-    for l in lines:
-        if l:
-            banned[l] = 1  # mark banned
-    print("banning users:", list(banned.keys()))
+    banned = set(open(Config.banned_path, 'rt'))
+    print(f"banning users: {banned}")
 
 # main loop
 last_db_load = None
@@ -109,45 +114,43 @@ while True:
     if last_db_load is None or os.stat(Config.db_path).st_mtime > last_db_load:
         last_db_load = time.time()
         print("(re-) loading the paper database", Config.db_path)
-        db = pickle.load(open(Config.db_path, "rb"))
+        paper_db = pickle.load(open(Config.db_path, "rb"))
 
     # fetch the latest mentioning arxiv.org
-    results = get_latest_or_loop("arxiv.org")
     to_insert = []
-    for r in results:
-        arxiv_pids = extract_arxiv_pids(r)
-        arxiv_pids = [
-            p for p in arxiv_pids if p in db
-        ]  # filter to those that are in our paper db
+    for result in get_latest_or_loop("arxiv.org"):
+        arxiv_pids = extract_arxiv_pids(result)
+        # filter to those that are in our paper db
+        arxiv_pids = [p for p in arxiv_pids if p in paper_db]
         if not arxiv_pids:
             continue  # nothing we know about here, lets move on
-        if tweets.find_one({"id": r.id}):
+
+        if tweets.find_one({"id": result.id}):
             continue  # we already have this item
-        if r.user.screen_name in banned:
+
+        if result.user.screen_name in banned:
             continue  # banned user, very likely a bot
 
         # create the tweet. intentionally making it flat here without user nesting
-        d = parser.parse(r.created_at)  # datetime instance
-        tweet = {}
-        tweet["id"] = r.id
-        tweet["pids"] = arxiv_pids  # arxiv paper ids mentioned in this tweet
-        tweet["inserted_at_date"] = dnow_utc
-        tweet["created_at_date"] = d
-        tweet["created_at_time"] = (d - epochd).total_seconds()  # seconds since epoch
-        tweet["lang"] = r.lang
-        tweet["text"] = r.text
-        tweet["user_screen_name"] = r.user.screen_name
-        tweet["user_image_url"] = r.user.profile_image_url
-        tweet["user_followers_count"] = r.user.followers_count
-        tweet["user_following_count"] = r.user.friends_count
-        to_insert.append(tweet)
+        d = parser.parse(result.created_at)  # datetime instance
+        to_insert.append({
+            'id': result.id,
+            'pids': arxiv_pids,  # arxiv paper ids mentioned in this tweet
+            'inserted_at_date': dnow_utc,
+            'created_at_date': d,
+            'created_at_time': (d - epochd).total_seconds(),  # seconds since epoch
+            'lang': result.lang,
+            'text': result.text,
+            'user_screen_name': result.user.screen_name,
+            'user_image_url': result.user.profile_image_url,
+            'user_followers_count': result.user.followers_count,
+            'user_following_count': result.user.friends_count,
+        })
 
     if to_insert:
         tweets.insert_many(to_insert)
-    print(
-        "processed %d/%d new tweets. Currently maintaining total %d"
-        % (len(to_insert), len(results), tweets.count())
-    )
+    print(f"processed {len(to_insert)} new tweets. Currently"
+          f" maintaining total {tweets.count_documents({})}.")
 
     # run over 1,7,30 days
     pid_to_words_cache = {}
@@ -167,10 +170,11 @@ while True:
                 or len(tweet["text"]) < 40
             )
 
-            # give people with more followers more vote, as it's seen by more people and contributes to more hype
+            # give people with more followers more vote, as it's
+            #  seen by more people and contributes to more hype
             float_vote = min(math.log10(tweet["user_followers_count"] + 1), 4.0) / 2.0
             for pid in tweet["pids"]:
-                if not pid in records_dict:
+                if pid not in records_dict:
                     records_dict[pid] = {
                         "pid": pid,
                         "tweets": [],
@@ -178,12 +182,15 @@ while True:
                         "raw_vote": 0,
                     }  # create a new entry for this pid
 
-                # good tweets make a comment, not just a boring RT, or exactly the post title. Detect these.
+                # good tweets make a comment, not just a boring RT, or exactly
+                #  the post title. Detect these.
                 if pid in pid_to_words_cache:
                     title_words = pid_to_words_cache[pid]
+
                 else:
-                    title_words = tprepro(db[pid]["title"])
+                    title_words = tprepro(paper_db[pid]["title"])
                     pid_to_words_cache[pid] = title_words
+
                 comment_words = (
                     tweet_words - title_words
                 )  # how much does the tweet have other than just the actual title of the article?
@@ -208,9 +215,8 @@ while True:
 
         # record the total amount of vote/raw_vote for each pid
         for pid in votes:
-            records_dict[pid]["vote"] = votes[
-                pid
-            ]  # record the total amount of vote across relevant tweets
+            # record the total amount of vote across relevant tweets
+            records_dict[pid]["vote"] = votes[pid]
             records_dict[pid]["raw_vote"] = raw_votes[pid]
 
         # crop the tweets to only some number of highest weight ones (for efficiency)
