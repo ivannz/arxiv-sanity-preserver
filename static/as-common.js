@@ -292,7 +292,7 @@ function one_paper_show_tweets(collection) {
   var tcontentdiv = node.append('div')
     .classed('twcont', true);
 
-  var tweets = collection[ix].tweets;
+  var tweets = collection.tweets;
 
   tweets.forEach(function(tweet) {
     // distinguish non-boring tweets visually making their border green
