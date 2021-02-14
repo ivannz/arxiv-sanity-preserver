@@ -1,3 +1,10 @@
+# Next steps
+
+This application should be developed in the following ways:
+* use of [blueprints](https://flask.palletsprojects.com/en/1.1.x/blueprints/#blueprints) for extending functionality, such as adding integration and communication modules with [Zotero](https://github.com/zotero/zotero) or other reference management software
+* redefining the core entity of the program from arxiv id to more general doi or uuid, or custom identifier, so that it is possible to add, discuss and full-text search over other indexed publications, including uploaded papers
+  * think through a dedicated storage for such custom uploads
+  * maybe it is not the best idea to keep local copies of arxiv papers (can we request last-modified  header from the preprint server)
 
 # arxiv sanity preserver
 
